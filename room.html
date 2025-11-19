@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure Chat Room</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="room-page">
+    <div class="chat-container">
+        <!-- Header -->
+        <div class="chat-header">
+            <div class="room-info">
+                <h2 id="roomName">Room</h2>
+                <span class="status" id="connectionStatus">연결 중...</span>
+                <span class="user-count" id="userCount">👥 0</span>
+            </div>
+            <div class="header-actions">
+                <button id="showQRBtn" class="btn-icon" title="QR 코드 보기">📱</button>
+                <button id="leaveRoomBtn" class="btn-icon" title="방 나가기">🚪</button>
+            </div>
+        </div>
+
+        <!-- QR Code Modal -->
+        <div id="qrModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <span class="close-modal">&times;</span>
+                <h3>QR 코드로 초대하기</h3>
+                <div id="qrcode"></div>
+                <p class="room-url" id="roomURL"></p>
+                <button id="copyURLBtn" class="btn btn-primary">URL 복사</button>
+            </div>
+        </div>
+
+        <!-- Messages Area -->
+        <div class="messages-container" id="messagesContainer">
+            <div class="welcome-message">
+                <div class="lock-icon">🔒</div>
+                <p>종단간 암호화된 채팅방입니다.</p>
+                <p class="small">세션이 종료되면 모든 메시지가 삭제됩니다.</p>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="input-container">
+            <div class="timer-selector">
+                <label for="deleteTimer">자동 삭제:</label>
+                <select id="deleteTimer">
+                    <option value="0">삭제 안함</option>
+                    <option value="5">5초</option>
+                    <option value="10" selected>10초</option>
+                    <option value="30">30초</option>
+                    <option value="60">1분</option>
+                </select>
+            </div>
+            <div class="input-row">
+                <input 
+                    type="file" 
+                    id="imageInput" 
+                    accept="image/*" 
+                    style="display: none;"
+                >
+                <button id="imageBtn" class="btn-icon" title="이미지 전송">🖼️</button>
+                <input 
+                    type="text" 
+                    id="messageInput" 
+                    placeholder="메시지를 입력하세요..."
+                    autocomplete="off"
+                >
+                <button id="sendBtn" class="btn btn-primary">전송</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Session Expired Overlay -->
+    <div id="sessionExpired" class="overlay" style="display: none;">
+        <div class="overlay-content">
+            <h2>세션이 종료되었습니다</h2>
+            <p>상대방이 채팅방을 나갔습니다.</p>
+            <p class="countdown">3초 후 대화창이 닫힙니다...</p>
+            <button id="closeNowBtn" class="btn btn-primary">지금 닫기</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script src="client.js"></script>
+</body>
+</html>
+
+
+
