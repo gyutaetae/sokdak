@@ -9,18 +9,44 @@ const io = socketIo(server, {
   cors: {
     origin: "*",
     methods: ["GET", "POST"]
-  }
+  },
+  maxHttpBufferSize: 50e6, // 50MB
+  pingTimeout: 120000,
+  connectTimeout: 120000,
+  upgradeTimeout: 120000
 });
 
 const PORT = process.env.PORT || 3000;
+const MAX_USERS_PER_ROOM = 3;
+const ROOM_TIMEOUT = 24 * 60 * 60 * 1000; // 24시간
+const CLEANUP_INTERVAL = 60 * 60 * 1000; // 1시간
+const os = require('os');
 
-// 정적 파일 제공
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 메모리에 저장되는 방 정보 (세션 기반)
 const rooms = new Map();
 
-// 룸 정보 구조: { roomId: { users: Set, createdAt: timestamp } }
+// 로컬 네트워크 IP 가져오기
+function getLocalIP() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost';
+}
+
+// IP 정보 제공 API
+app.get('/api/server-info', (req, res) => {
+  res.json({
+    ip: getLocalIP(),
+    port: PORT,
+    url: `http://${getLocalIP()}:${PORT}`
+  });
+});
 
 io.on('connection', (socket) => {
   console.log(`New connection: ${socket.id}`);
@@ -35,8 +61,17 @@ io.on('connection', (socket) => {
       console.log(`Room created: ${roomId}`);
     }
     
+    const room = rooms.get(roomId);
+    
+    // 최대 인원 체크
+    if (room.users.size >= MAX_USERS_PER_ROOM) {
+      socket.emit('room-full', { maxUsers: MAX_USERS_PER_ROOM });
+      console.log(`Room ${roomId} is full. Rejected user ${socket.id}`);
+      return;
+    }
+    
     socket.join(roomId);
-    rooms.get(roomId).users.add(socket.id);
+    room.users.add(socket.id);
     socket.roomId = roomId;
     
     socket.emit('room-created', { roomId });
@@ -44,10 +79,10 @@ io.on('connection', (socket) => {
     // 방의 다른 사용자들에게 알림
     socket.to(roomId).emit('user-joined', {
       userId: socket.id,
-      userCount: rooms.get(roomId).users.size
+      userCount: room.users.size
     });
     
-    console.log(`User ${socket.id} created/joined room ${roomId}`);
+    console.log(`User ${socket.id} created/joined room ${roomId}. Total users: ${room.users.size}`);
   });
 
   // 방 입장
@@ -57,11 +92,20 @@ io.on('connection', (socket) => {
       return;
     }
 
+    const room = rooms.get(roomId);
+    
+    // 최대 인원 체크
+    if (room.users.size >= MAX_USERS_PER_ROOM) {
+      socket.emit('room-full', { maxUsers: MAX_USERS_PER_ROOM });
+      console.log(`Room ${roomId} is full. Rejected user ${socket.id}`);
+      return;
+    }
+
     socket.join(roomId);
-    rooms.get(roomId).users.add(socket.id);
+    room.users.add(socket.id);
     socket.roomId = roomId;
     
-    const userCount = rooms.get(roomId).users.size;
+    const userCount = room.users.size;
     
     socket.emit('room-joined', { roomId, userCount });
     
@@ -160,10 +204,8 @@ io.on('connection', (socket) => {
   });
 });
 
-// 주기적으로 오래된 빈 방 정리 (선택사항)
 setInterval(() => {
   const now = Date.now();
-  const ROOM_TIMEOUT = 24 * 60 * 60 * 1000; // 24시간
   
   for (const [roomId, room] of rooms.entries()) {
     if (room.users.size === 0 && (now - room.createdAt) > ROOM_TIMEOUT) {
@@ -171,14 +213,12 @@ setInterval(() => {
       console.log(`Room ${roomId} cleaned up (timeout)`);
     }
   }
-}, 60 * 60 * 1000); // 1시간마다 확인
+}, CLEANUP_INTERVAL);
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Access at http://localhost:${PORT}`);
   
-  // 로컬 네트워크 IP 주소 표시
-  const os = require('os');
   const networkInterfaces = os.networkInterfaces();
   console.log('\n📱 모바일 접속 주소:');
   
@@ -191,7 +231,3 @@ server.listen(PORT, '0.0.0.0', () => {
   });
   console.log('');
 });
-
-
-
-

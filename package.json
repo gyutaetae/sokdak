@@ -1,7 +1,7 @@
 {
-  "name": "secure-chat-webrtc",
-  "version": "1.0.0",
-  "description": "P2P encrypted chat application with WebRTC and Socket.io",
+  "name": "phantom-chat",
+  "version": "2.0.0",
+  "description": "익명 암호화 메신저 - WebRTC 기반 E2E 암호화 P2P 채팅 (카카오톡 대안)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -12,10 +12,19 @@
     "p2p",
     "chat",
     "encryption",
-    "socket.io"
+    "e2ee",
+    "socket.io",
+    "anonymous",
+    "privacy",
+    "secure-messaging",
+    "kakao-alternative"
   ],
-  "author": "",
+  "author": "Gyu-kor",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Gyu-kor/secure-chat.git"
+  },
   "dependencies": {
     "express": "^4.18.2",
     "socket.io": "^4.6.1"

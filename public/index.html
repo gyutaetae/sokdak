@@ -3,85 +3,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure Chat - P2P Encrypted Messaging</title>
+    <title>Phantom Chat - 익명 암호화 메신저</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
         <div class="hero-section">
-            <div class="lock-icon">🔒</div>
-            <h1>Secure Chat</h1>
-            <p class="tagline">End-to-End Encrypted P2P Messaging</p>
-            <p class="subtitle">감시 없는 자유로운 대화. 세션이 종료되면 모든 기록이 사라집니다.</p>
+            <h1>속닥챗</h1>
+            <p class="tagline">완벽한 익명성 · 종단간 암호화 · 흔적 없는 소멸</p>
+            <p class="subtitle">비밀 대화방을 생성하고 누구에게도 감시받지 않는 대화를 시작하세요</p>
         </div>
 
         <div class="action-section">
             <div class="card">
-                <h2>새 채팅방 만들기</h2>
-                <p>방 이름을 입력하고 QR 코드를 공유하세요</p>
+                <h2>비밀 대화방 생성</h2>
+                <p>고유한 방 이름을 설정하고 QR로 초대하세요</p>
                 <input 
                     type="text" 
                     id="createRoomInput" 
-                    placeholder="방 이름 입력 (예: secret-chat-123)"
+                    placeholder="방 이름 입력 (예: secret-2024)"
                     maxlength="50"
                 >
-                <button id="createRoomBtn" class="btn btn-primary">방 만들기</button>
-            </div>
-
-            <div class="divider">
-                <span>또는</span>
+                <button id="createRoomBtn" class="btn btn-primary">생성하기</button>
             </div>
 
             <div class="card">
-                <h2>채팅방 입장하기</h2>
-                <p>공유받은 방 이름이나 QR 코드를 스캔하세요</p>
+                <h2>대화방 입장</h2>
+                <p>초대받은 방 이름 또는 QR 코드로 접속</p>
                 <input 
                     type="text" 
                     id="joinRoomInput" 
-                    placeholder="방 이름 입력"
+                    placeholder="방 이름을 입력하세요"
                     maxlength="50"
                 >
                 <button id="joinRoomBtn" class="btn btn-secondary">입장하기</button>
                 <div class="qr-section">
-                    <button id="scanQRBtn" class="btn btn-outline">QR 코드 스캔</button>
-                    <video id="qrVideo" style="display: none;"></video>
+                    <button id="scanQRBtn" class="btn btn-outline">QR 스캔</button>
+                    <video id="qrVideo" playsinline autoplay muted style="display: none; width: 100%; max-width: 500px; border-radius: 8px; margin-top: 10px;"></video>
                     <canvas id="qrCanvas" style="display: none;"></canvas>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 10px; display: none;" id="qrHint">또는 방 이름을 직접 입력하세요</p>
                 </div>
             </div>
         </div>
 
         <div class="features">
             <div class="feature">
-                <div class="feature-icon">🔐</div>
-                <h3>E2E 암호화</h3>
-                <p>WebRTC 기반 종단간 암호화</p>
+                <h3>완전한 암호화</h3>
+                <p>종단간 암호화로 제3자 접근 불가</p>
             </div>
             <div class="feature">
-                <div class="feature-icon">🚀</div>
+                <h3>흔적 없는 소멸</h3>
+                <p>1초~1분 자동 삭제 타이머</p>
+            </div>
+            <div class="feature">
                 <h3>P2P 직접 연결</h3>
-                <p>서버를 거치지 않는 직접 전송</p>
+                <p>서버 미경유 직접 전송</p>
             </div>
             <div class="feature">
-                <div class="feature-icon">⏱️</div>
-                <h3>자동 삭제</h3>
-                <p>메시지별 타이머 설정 가능</p>
-            </div>
-            <div class="feature">
-                <div class="feature-icon">👻</div>
-                <h3>세션 기반</h3>
-                <p>세션 종료 시 모든 기록 소멸</p>
+                <h3>설치 불필요</h3>
+                <p>웹 브라우저만 있으면 즉시 사용</p>
             </div>
         </div>
 
         <div class="info-section">
-            <p class="warning">⚠️ 주의: 이 애플리케이션은 데이터를 저장하지 않습니다. 브라우저를 닫으면 모든 대화 내용이 영구적으로 사라집니다.</p>
+            <p class="warning">프라이버시 보호: 모든 대화는 서버에 저장되지 않으며, 세션 종료 시 완전히 소멸됩니다. 최대 3명까지 동시 접속 가능합니다.</p>
+        </div>
+    </div>
+
+    <!-- QR Code Modal -->
+    <div id="qrModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h3>📱 QR 코드로 모바일 초대</h3>
+            <p style="color: var(--text-muted); margin: 10px 0;">휴대폰 카메라로 스캔하세요</p>
+            <div id="qrcode" style="display: flex; justify-content: center; margin: 20px 0;"></div>
+            <p class="room-url" id="roomURL" style="word-break: break-all; font-size: 0.85rem; color: var(--text-muted); margin: 15px 0;"></p>
+            <button id="copyURLBtn" class="btn btn-primary" style="margin-bottom: 10px;">URL 복사</button>
+            <button id="enterRoomBtn" class="btn btn-secondary">방 입장하기</button>
         </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script>
         const socket = io();
+        
+        // 서버 IP 정보 가져오기
+        let serverURL = window.location.origin;
+        fetch('/api/server-info')
+            .then(res => res.json())
+            .then(data => {
+                serverURL = data.url;
+                console.log('서버 URL:', serverURL);
+            })
+            .catch(() => {
+                console.log('로컬 접속:', serverURL);
+            });
         
         // 방 만들기
         document.getElementById('createRoomBtn').addEventListener('click', () => {
@@ -97,7 +115,6 @@
                 return;
             }
             
-            // 방 페이지로 이동
             window.location.href = `/room.html?room=${roomId}&create=true`;
         });
         
@@ -136,36 +153,49 @@
         document.getElementById('scanQRBtn').addEventListener('click', async () => {
             if (!qrScanning) {
                 try {
-                    // 카메라 권한 요청 안내
+                    // 브라우저 지원 확인
                     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                        alert('이 브라우저는 카메라 기능을 지원하지 않습니다.\nChrome, Safari, Firefox 등의 브라우저를 사용해주세요.');
+                        alert('카메라 기능을 사용할 수 없습니다.\n\n대신 다음 방법을 사용하세요:\n1. 다른 기기의 카메라로 QR 스캔\n2. 방 이름을 직접 입력');
                         return;
                     }
                     
-                    const stream = await navigator.mediaDevices.getUserMedia({ 
-                        video: { facingMode: 'environment' } 
-                    });
+                    // 모바일 최적화된 카메라 설정
+                    const constraints = {
+                        video: {
+                            facingMode: { ideal: 'environment' },
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 }
+                        },
+                        audio: false
+                    };
+                    
+                    const stream = await navigator.mediaDevices.getUserMedia(constraints);
                     qrVideo.srcObject = stream;
                     qrVideo.style.display = 'block';
-                    qrVideo.play();
+                    qrVideo.setAttribute('playsinline', 'true');
+                    qrVideo.setAttribute('autoplay', 'true');
+                    await qrVideo.play();
                     qrScanning = true;
                     document.getElementById('scanQRBtn').textContent = '스캔 중지';
                     scanQRCode();
                 } catch (err) {
-                    console.error('카메라 접근 오류:', err);
-                    let errorMessage = '카메라 접근 권한이 필요합니다.\n\n';
+                    console.error('카메라 접근 오류:', err, err.name);
+                    let errorMessage = '';
                     
                     if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                        errorMessage += '브라우저 설정에서 카메라 권한을 허용해주세요:\n\n';
-                        errorMessage += '1. 주소창 왼쪽의 자물쇠/카메라 아이콘 클릭\n';
-                        errorMessage += '2. "카메라" 권한을 "허용"으로 변경\n';
-                        errorMessage += '3. 페이지 새로고침 후 다시 시도';
+                        errorMessage = '카메라 권한이 거부되었습니다.\n\n';
+                        errorMessage += '📱 모바일:\n';
+                        errorMessage += '- 설정 > Safari/Chrome > 카메라 허용\n\n';
+                        errorMessage += '💻 PC:\n';
+                        errorMessage += '- 주소창의 카메라 아이콘 클릭\n';
+                        errorMessage += '- 권한을 "허용"으로 변경\n\n';
+                        errorMessage += '또는 방 이름을 직접 입력하세요.';
                     } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-                        errorMessage += '카메라를 찾을 수 없습니다.\n카메라가 연결되어 있는지 확인해주세요.';
+                        errorMessage = '카메라를 찾을 수 없습니다.\n\n방 이름을 직접 입력하여 입장하세요.';
                     } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-                        errorMessage += '카메라가 다른 앱에서 사용 중입니다.\n다른 앱을 종료하고 다시 시도해주세요.';
+                        errorMessage = '카메라가 다른 앱에서 사용 중입니다.\n\n다른 앱을 종료하거나 방 이름을 직접 입력하세요.';
                     } else {
-                        errorMessage += '오류: ' + err.message;
+                        errorMessage = '카메라를 사용할 수 없습니다.\n\n방 이름을 직접 입력하여 입장하세요.';
                     }
                     
                     alert(errorMessage);
@@ -212,6 +242,50 @@
             qrVideo.style.display = 'none';
             document.getElementById('scanQRBtn').textContent = 'QR 코드 스캔';
         }
+        
+        // QR 코드 표시
+        let currentRoomId = '';
+        function showQRCode(roomId) {
+            currentRoomId = roomId;
+            const roomURL = `${serverURL}/room.html?room=${roomId}&create=true`;
+            document.getElementById('roomURL').textContent = roomURL;
+            
+            const qrcodeContainer = document.getElementById('qrcode');
+            qrcodeContainer.innerHTML = '';
+            new QRCode(qrcodeContainer, {
+                text: roomURL,
+                width: 256,
+                height: 256,
+                colorDark: "#8b5cf6",
+                colorLight: "#ffffff"
+            });
+            
+            document.getElementById('qrModal').style.display = 'flex';
+        }
+        
+        // QR 모달 닫기
+        document.querySelector('.close-modal').addEventListener('click', () => {
+            document.getElementById('qrModal').style.display = 'none';
+        });
+        
+        document.getElementById('qrModal').addEventListener('click', (e) => {
+            if (e.target.id === 'qrModal') {
+                document.getElementById('qrModal').style.display = 'none';
+            }
+        });
+        
+        // URL 복사
+        document.getElementById('copyURLBtn').addEventListener('click', () => {
+            const roomURL = document.getElementById('roomURL').textContent;
+            navigator.clipboard.writeText(roomURL).then(() => {
+                alert('URL이 복사되었습니다! 다른 사람에게 공유하세요.');
+            });
+        });
+        
+        // 방 입장하기
+        document.getElementById('enterRoomBtn').addEventListener('click', () => {
+            window.location.href = `/room.html?room=${currentRoomId}&create=true`;
+        });
     </script>
 </body>
 </html>
