@@ -398,6 +398,13 @@ function displayMessage(message, isMine, type = 'text', deleteAfter = 0) {
     messageDiv.appendChild(messageContent);
     
     messagesContainer.appendChild(messageDiv);
+    
+    // 모바일에서 스크롤이 끝까지 내려가도록 보장
+    setTimeout(() => {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }, 100);
+    
+    // 즉시 스크롤도 시도
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
     
     // 자동 삭제 타이머 (카운트다운)
@@ -431,6 +438,12 @@ function showSystemMessage(message) {
     messageDiv.className = 'system-message';
     messageDiv.textContent = message;
     messagesContainer.appendChild(messageDiv);
+    
+    // 모바일에서 스크롤이 끝까지 내려가도록 보장
+    setTimeout(() => {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }, 100);
+    
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
