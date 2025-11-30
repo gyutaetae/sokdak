@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Phantom Chat - 익명 암호화 메신저</title>
+    <title>sokdak - 익명 암호화 메신저</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="apple-touch-icon" href="/favicon.svg">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -21,7 +23,7 @@
                 <input 
                     type="text" 
                     id="createRoomInput" 
-                    placeholder="방 이름 입력 (예: secret-2024)"
+                    placeholder="방 이름은 영문, 숫자, -, _ 만 사용할 수 있습니다."
                     maxlength="50"
                 >
                 <button id="createRoomBtn" class="btn btn-primary">생성하기</button>
@@ -29,7 +31,7 @@
 
             <div class="card">
                 <h2>대화방 입장</h2>
-                <p>초대받은 방 이름 또는 QR 코드로 접속</p>
+                <p>초대받은 방 이름을 입력하세요</p>
                 <input 
                     type="text" 
                     id="joinRoomInput" 
@@ -37,12 +39,6 @@
                     maxlength="50"
                 >
                 <button id="joinRoomBtn" class="btn btn-secondary">입장하기</button>
-                <div class="qr-section">
-                    <button id="scanQRBtn" class="btn btn-outline">QR 스캔</button>
-                    <video id="qrVideo" playsinline autoplay muted style="display: none; width: 100%; max-width: 500px; border-radius: 8px; margin-top: 10px;"></video>
-                    <canvas id="qrCanvas" style="display: none;"></canvas>
-                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 10px; display: none;" id="qrHint">또는 방 이름을 직접 입력하세요</p>
-                </div>
             </div>
         </div>
 
@@ -84,7 +80,6 @@
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script>
         const socket = io();
@@ -153,132 +148,6 @@
                 document.getElementById('joinRoomBtn').click();
             }
         });
-        
-        // QR 코드 스캔 기능 (기본 구현)
-        let qrScanning = false;
-        const qrVideo = document.getElementById('qrVideo');
-        const qrCanvas = document.getElementById('qrCanvas');
-        const qrContext = qrCanvas.getContext('2d');
-        
-        document.getElementById('scanQRBtn').addEventListener('click', async () => {
-            if (!qrScanning) {
-                try {
-                    // HTTPS 체크 (로컬호스트 제외)
-                    if (location.protocol !== 'https:' && !location.hostname.includes('localhost') && location.hostname !== '127.0.0.1') {
-                        alert('카메라 기능은 HTTPS 연결에서만 사용할 수 있습니다.\n\n현재: ' + location.protocol + '//' + location.host + '\n\n방 이름을 직접 입력하여 입장하세요.');
-                        return;
-                    }
-                    
-                    // 브라우저 지원 확인
-                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                        alert('카메라 기능을 사용할 수 없습니다.\n\n대신 다음 방법을 사용하세요:\n1. 다른 기기의 카메라로 QR 스캔\n2. 방 이름을 직접 입력');
-                        return;
-                    }
-                    
-                    // 모바일 최적화된 카메라 설정 (더 유연한 설정)
-                    const constraints = {
-                        video: {
-                            facingMode: { ideal: 'environment' },
-                            width: { ideal: 1280, max: 1920 },
-                            height: { ideal: 720, max: 1080 }
-                        },
-                        audio: false
-                    };
-                    
-                    const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                    qrVideo.srcObject = stream;
-                    qrVideo.style.display = 'block';
-                    qrVideo.setAttribute('playsinline', 'true');
-                    qrVideo.setAttribute('autoplay', 'true');
-                    await qrVideo.play();
-                    qrScanning = true;
-                    document.getElementById('scanQRBtn').textContent = '스캔 중지';
-                    scanQRCode();
-                } catch (err) {
-                    console.error('카메라 접근 오류:', err, err.name);
-                    let errorMessage = '';
-                    
-                    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                        errorMessage = '카메라 권한이 거부되었습니다.\n\n';
-                        errorMessage += '모바일 해결 방법:\n';
-                        errorMessage += '1. Safari: 설정 > Safari > 카메라 > 허용\n';
-                        errorMessage += '2. Chrome: 설정 > Chrome > 사이트 설정 > 카메라 > 허용\n';
-                        errorMessage += '3. 또는 주소창의 자물쇠 아이콘 클릭 > 카메라 허용\n\n';
-                        errorMessage += 'PC 해결 방법:\n';
-                        errorMessage += '- 주소창의 카메라 아이콘 클릭 > 허용\n\n';
-                        errorMessage += '또는 방 이름을 직접 입력하세요.';
-                    } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-                        errorMessage = '카메라를 찾을 수 없습니다.\n\n방 이름을 직접 입력하여 입장하세요.';
-                    } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-                        errorMessage = '카메라가 다른 앱에서 사용 중입니다.\n\n다른 앱을 종료하거나 방 이름을 직접 입력하세요.';
-                    } else if (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError') {
-                        // 제약 조건을 만족하지 못하는 경우 더 유연한 설정으로 재시도
-                        try {
-                            const fallbackConstraints = {
-                                video: { facingMode: 'environment' },
-                                audio: false
-                            };
-                            const stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
-                            qrVideo.srcObject = stream;
-                            qrVideo.style.display = 'block';
-                            qrVideo.setAttribute('playsinline', 'true');
-                            qrVideo.setAttribute('autoplay', 'true');
-                            await qrVideo.play();
-                            qrScanning = true;
-                            document.getElementById('scanQRBtn').textContent = '스캔 중지';
-                            scanQRCode();
-                            return;
-                        } catch (fallbackErr) {
-                            errorMessage = '카메라 설정에 실패했습니다.\n\n방 이름을 직접 입력하여 입장하세요.';
-                        }
-                    } else {
-                        errorMessage = '카메라를 사용할 수 없습니다.\n\n오류: ' + err.name + '\n\n방 이름을 직접 입력하여 입장하세요.';
-                    }
-                    
-                    alert(errorMessage);
-                }
-            } else {
-                stopQRScan();
-            }
-        });
-        
-        function scanQRCode() {
-            if (!qrScanning) return;
-            
-            if (qrVideo.readyState === qrVideo.HAVE_ENOUGH_DATA) {
-                qrCanvas.height = qrVideo.videoHeight;
-                qrCanvas.width = qrVideo.videoWidth;
-                qrContext.drawImage(qrVideo, 0, 0, qrCanvas.width, qrCanvas.height);
-                
-                const imageData = qrContext.getImageData(0, 0, qrCanvas.width, qrCanvas.height);
-                const code = jsQR(imageData.data, imageData.width, imageData.height);
-                
-                if (code) {
-                    try {
-                        const url = new URL(code.data);
-                        const roomId = url.searchParams.get('room');
-                        if (roomId) {
-                            stopQRScan();
-                            window.location.href = `/room.html?room=${roomId}`;
-                            return;
-                        }
-                    } catch (e) {
-                        // URL이 아닌 경우 무시
-                    }
-                }
-            }
-            
-            requestAnimationFrame(scanQRCode);
-        }
-        
-        function stopQRScan() {
-            qrScanning = false;
-            if (qrVideo.srcObject) {
-                qrVideo.srcObject.getTracks().forEach(track => track.stop());
-            }
-            qrVideo.style.display = 'none';
-            document.getElementById('scanQRBtn').textContent = 'QR 코드 스캔';
-        }
         
         // QR 코드 표시
         let currentRoomId = '';

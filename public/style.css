@@ -266,16 +266,6 @@ input[type="text"]:focus {
     border: 1px solid var(--border-color);
 }
 
-.qr-section {
-    margin-top: 20px;
-}
-
-#qrVideo {
-    width: 100%;
-    border-radius: 8px;
-    margin-top: 10px;
-}
-
 .features {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
