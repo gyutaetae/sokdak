@@ -23,10 +23,11 @@ const sessionExpired = document.getElementById('sessionExpired');
 
 // 상태 관리
 let mySocketId = null;
-let peers = new Map(); // { peerId: RTCPeerConnection }
-let dataChannels = new Map(); // { peerId: RTCDataChannel }
+let peers = new Map();
+let dataChannels = new Map();
 let currentUserCount = 0;
-const MAX_USERS = 3; // 최대 사용자 수
+let encryptionReady = new Map();
+const MAX_USERS = 3;
 
 // WebRTC 설정
 const configuration = {
@@ -36,90 +37,93 @@ const configuration = {
     ]
 };
 
+// 유틸리티 함수
+function scrollToBottom() {
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+function isNearBottom() {
+    return messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight < 100;
+}
+
+function updateUserCount(count) {
+    currentUserCount = count;
+    userCount.textContent = `👥 ${currentUserCount}/${MAX_USERS}`;
+}
+
+function updateConnectionStatus(text, className) {
+    connectionStatus.textContent = text;
+    connectionStatus.className = className;
+}
+
+async function ensureEncryption() {
+    if (!cryptoUtils.keyPair) {
+        await cryptoUtils.generateKeyPair();
+    }
+}
+
+async function sendPublicKey(to = null) {
+    await ensureEncryption();
+    const publicKey = await cryptoUtils.exportPublicKey();
+    socket.emit('public-key', to ? { to, publicKey } : { publicKey });
+}
+
+async function connectToUsers(userIds) {
+    if (!userIds || userIds.length === 0) return;
+    for (const userId of userIds) {
+        await createPeerConnection(userId, true);
+    }
+}
+
+// 초기화
 function init() {
     if (!roomId) {
         alert('방 ID가 없습니다.');
         window.location.href = '/';
         return;
     }
-    
     roomName.textContent = `방: ${roomId}`;
     initializeRoom();
 }
 
-init();
-
-// 모바일 브라우저 자동완성 제안 숨기기
+// 모바일 입력 설정
 if (messageInput) {
-    // 추가 속성 설정
-    messageInput.setAttribute('autocomplete', 'off');
-    messageInput.setAttribute('autocapitalize', 'off');
-    messageInput.setAttribute('autocorrect', 'off');
-    messageInput.setAttribute('spellcheck', 'false');
-    
-    // 모바일에서 입력창 클릭 시 키보드 올라오도록 보장
-    messageInput.addEventListener('touchstart', (e) => {
-        e.target.focus();
-    }, { passive: true });
-    
-    messageInput.addEventListener('click', (e) => {
-        e.target.focus();
+    ['autocomplete', 'autocapitalize', 'autocorrect', 'spellcheck'].forEach(attr => {
+        messageInput.setAttribute(attr, attr === 'spellcheck' ? 'false' : 'off');
     });
+    messageInput.addEventListener('touchstart', (e) => e.target.focus(), { passive: true });
+    messageInput.addEventListener('click', (e) => e.target.focus());
 }
 
-// 방 초기화
 function initializeRoom() {
-    if (isCreator) {
-        socket.emit('create-room', roomId);
-    } else {
-        socket.emit('join-room', roomId);
-    }
+    socket.emit(isCreator ? 'create-room' : 'join-room', roomId);
 }
 
 // Socket.io 이벤트 핸들러
-socket.on('connect', () => {
+socket.on('connect', async () => {
     mySocketId = socket.id;
     console.log('Connected to server:', mySocketId);
+    await ensureEncryption();
 });
 
 socket.on('room-created', async (data) => {
-    console.log('Room created:', data.roomId);
-    connectionStatus.textContent = '연결됨';
-    connectionStatus.className = 'status connected';
+    updateConnectionStatus('연결됨', 'status connected');
     showSystemMessage('방이 생성되었습니다. 다른 사용자를 초대하세요.');
-    
-    // 기존 사용자들과 WebRTC 연결 시작 (있는 경우)
-    if (data.existingUsers && data.existingUsers.length > 0) {
-        console.log('Connecting to existing users:', data.existingUsers);
-        for (const userId of data.existingUsers) {
-            await createPeerConnection(userId, true);
-        }
-    }
+    await sendPublicKey();
+    await connectToUsers(data.existingUsers);
 });
 
 socket.on('room-joined', async (data) => {
-    console.log('Room joined:', data.roomId);
-    
-    // 최대 인원 초과 체크
     if (data.userCount > MAX_USERS) {
         alert(`이 방은 최대 ${MAX_USERS}명까지만 입장할 수 있습니다.`);
         window.location.href = '/';
         return;
     }
-    
-    connectionStatus.textContent = '연결됨';
-    connectionStatus.className = 'status connected';
-    currentUserCount = data.userCount;
-    userCount.textContent = `👥 ${currentUserCount}/${MAX_USERS}`;
+    updateConnectionStatus('연결됨', 'status connected');
+    updateUserCount(data.userCount);
     showSystemMessage('방에 입장했습니다.');
-    
-    // 기존 사용자들과 WebRTC 연결 시작
-    if (data.existingUsers && data.existingUsers.length > 0) {
-        console.log('Connecting to existing users:', data.existingUsers);
-        for (const userId of data.existingUsers) {
-            await createPeerConnection(userId, true);
-        }
-    }
+    await sendPublicKey();
+    await connectToUsers(data.existingUsers);
 });
 
 socket.on('room-not-found', () => {
@@ -133,59 +137,54 @@ socket.on('room-full', (data) => {
 });
 
 socket.on('user-joined', async (data) => {
-    console.log('User joined:', data.userId);
-    
-    // 최대 인원 체크
     if (data.userCount > MAX_USERS) {
         showSystemMessage(`최대 인원(${MAX_USERS}명)을 초과했습니다.`);
         return;
     }
-    
-    currentUserCount = data.userCount;
-    userCount.textContent = `👥 ${currentUserCount}/${MAX_USERS}`;
+    updateUserCount(data.userCount);
     showSystemMessage('사용자가 입장했습니다.');
-    
-    // WebRTC 연결 시작 (offer 생성)
+    await sendPublicKey(data.userId);
     await createPeerConnection(data.userId, true);
 });
 
+socket.on('public-key', async (data) => {
+    const peerId = data.from || data.userId;
+    try {
+        await cryptoUtils.deriveSharedKey(peerId, data.publicKey);
+        encryptionReady.set(peerId, true);
+        if (!data.from) {
+            await sendPublicKey(peerId);
+        }
+    } catch (error) {
+        console.error(`Failed to derive shared key with ${peerId}:`, error);
+    }
+});
+
 socket.on('user-left', (data) => {
-    console.log('User left:', data.userId);
-    currentUserCount = data.userCount;
-    userCount.textContent = `👥 ${currentUserCount}/${MAX_USERS}`;
+    updateUserCount(data.userCount);
     showSystemMessage('사용자가 나갔습니다.');
-    
-    // WebRTC 연결 정리
+    cryptoUtils.removeSharedKey(data.userId);
+    encryptionReady.delete(data.userId);
     closePeerConnection(data.userId);
-    
-    // 사용자가 나가면 3초 후 자동 종료
     showSessionExpired();
 });
 
 // WebRTC 시그널링
 socket.on('offer', async (data) => {
-    console.log('Received offer from:', data.from);
     await createPeerConnection(data.from, false);
     const pc = peers.get(data.from);
-    
     try {
         await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        
-        socket.emit('answer', {
-            to: data.from,
-            answer: answer
-        });
+        socket.emit('answer', { to: data.from, answer });
     } catch (err) {
         console.error('Error handling offer:', err);
     }
 });
 
 socket.on('answer', async (data) => {
-    console.log('Received answer from:', data.from);
     const pc = peers.get(data.from);
-    
     if (pc) {
         try {
             await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
@@ -197,7 +196,6 @@ socket.on('answer', async (data) => {
 
 socket.on('ice-candidate', async (data) => {
     const pc = peers.get(data.from);
-    
     if (pc && data.candidate) {
         try {
             await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
@@ -207,88 +205,54 @@ socket.on('ice-candidate', async (data) => {
     }
 });
 
-// 백업 메시지 수신 (P2P 실패 시)
 socket.on('chat-message', (data) => {
     displayMessage(data.message, false, data.type, data.deleteAfter);
 });
 
-// WebRTC Peer Connection 생성
+// WebRTC 함수
 async function createPeerConnection(peerId, isInitiator) {
-    if (peers.has(peerId)) {
-        console.log(`Peer connection already exists for ${peerId}`);
-        return;
-    }
-    
-    console.log(`Creating peer connection with ${peerId} (initiator: ${isInitiator})`);
+    if (peers.has(peerId)) return;
     
     const pc = new RTCPeerConnection(configuration);
     peers.set(peerId, pc);
     
-    // ICE candidate 이벤트
     pc.onicecandidate = (event) => {
         if (event.candidate) {
-            socket.emit('ice-candidate', {
-                to: peerId,
-                candidate: event.candidate
-            });
-            console.log(`Sent ICE candidate to ${peerId}`);
+            socket.emit('ice-candidate', { to: peerId, candidate: event.candidate });
         }
     };
     
-    // 연결 상태 변경
     pc.onconnectionstatechange = () => {
-        console.log(`Connection state with ${peerId}:`, pc.connectionState);
-        
         if (pc.connectionState === 'connected') {
-            connectionStatus.textContent = 'P2P 연결됨';
-            connectionStatus.className = 'status connected';
-            console.log(`✅ P2P connected with ${peerId}`);
+            updateConnectionStatus('P2P 연결됨', 'status connected');
         } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-            connectionStatus.textContent = '연결 끊김';
-            connectionStatus.className = 'status disconnected';
-            console.warn(`❌ Connection lost with ${peerId}: ${pc.connectionState}`);
+            updateConnectionStatus('연결 끊김', 'status disconnected');
         }
     };
     
-    // Data Channel 설정
     if (isInitiator) {
         const dataChannel = pc.createDataChannel('chat');
         setupDataChannel(peerId, dataChannel);
-        console.log(`Created data channel with ${peerId}`);
-        
         try {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
-            
-            socket.emit('offer', {
-                to: peerId,
-                offer: offer
-            });
-            console.log(`Sent offer to ${peerId}`);
+            socket.emit('offer', { to: peerId, offer });
         } catch (err) {
             console.error(`Error creating offer for ${peerId}:`, err);
         }
     } else {
-        pc.ondatachannel = (event) => {
-            console.log(`📨 Received data channel from ${peerId}`);
-            setupDataChannel(peerId, event.channel);
-        };
+        pc.ondatachannel = (event) => setupDataChannel(peerId, event.channel);
     }
 }
 
-// Data Channel 설정
 function setupDataChannel(peerId, channel) {
-    console.log(`Setting up data channel with ${peerId}, state: ${channel.readyState}`);
     dataChannels.set(peerId, channel);
     
     channel.onopen = () => {
-        console.log(`✅ Data channel opened with ${peerId}`);
-        connectionStatus.textContent = 'P2P 연결됨';
-        connectionStatus.className = 'status connected';
+        updateConnectionStatus('P2P 연결됨', 'status connected');
     };
     
     channel.onclose = () => {
-        console.log(`❌ Data channel closed with ${peerId}`);
         dataChannels.delete(peerId);
     };
     
@@ -296,98 +260,95 @@ function setupDataChannel(peerId, channel) {
         console.error(`Data channel error with ${peerId}:`, error);
     };
     
-    channel.onmessage = (event) => {
+    channel.onmessage = async (event) => {
         try {
             const data = JSON.parse(event.data);
-            console.log(`📩 Received message from ${peerId}, type: ${data.type}`);
-            displayMessage(data.message, false, data.type, data.deleteAfter);
+            let message = data.message;
+            
+            if (data.encrypted && encryptionReady.get(peerId)) {
+                try {
+                    message = await cryptoUtils.decryptMessage(peerId, data.message);
+                } catch (err) {
+                    message = '[암호화된 메시지 복호화 실패]';
+                }
+            }
+            displayMessage(message, false, data.type, data.deleteAfter);
         } catch (err) {
             console.error('Error parsing message:', err);
         }
     };
 }
 
-// Peer Connection 종료
 function closePeerConnection(peerId) {
     const pc = peers.get(peerId);
     const dc = dataChannels.get(peerId);
-    
-    if (dc) {
-        dc.close();
-        dataChannels.delete(peerId);
-    }
-    
-    if (pc) {
-        pc.close();
-        peers.delete(peerId);
-    }
+    if (dc) dc.close();
+    if (pc) pc.close();
+    peers.delete(peerId);
+    dataChannels.delete(peerId);
 }
 
-function sendMessageData(message, type = 'text') {
+// 메시지 전송
+async function sendMessageData(message, type = 'text') {
     const deleteAfterSeconds = parseInt(deleteTimer.value);
-    const messageData = { message, type, deleteAfter: deleteAfterSeconds };
-    
-    console.log(`Sending message, type: ${type}, channels: ${dataChannels.size}, socket connected: ${socket.connected}`);
-    
+    const sendPromises = [];
     let sentViaP2P = false;
-    let hasOpenChannel = false;
     
-    dataChannels.forEach((channel, peerId) => {
-        console.log(`Channel ${peerId} state: ${channel.readyState}`);
+    for (const [peerId, channel] of dataChannels.entries()) {
         if (channel.readyState === 'open') {
-            hasOpenChannel = true;
-            try {
-                channel.send(JSON.stringify(messageData));
-                sentViaP2P = true;
-                console.log(`✅ Sent via P2P to ${peerId}`);
-            } catch (err) {
-                console.error(`Failed to send via P2P to ${peerId}:`, err);
-            }
-        }
-    });
-    
-    // P2P 연결이 없거나 실패한 경우 Socket.io로 전송
-    if (!sentViaP2P) {
-        if (!socket.connected) {
-            console.error('Socket.io not connected!');
-            alert('서버 연결이 끊어졌습니다. 페이지를 새로고침해주세요.');
-            return;
-        }
-        console.log('Sending via Socket.io (no P2P connection)');
-        try {
-            socket.emit('chat-message', messageData);
-            console.log('✅ Sent via Socket.io');
-        } catch (err) {
-            console.error('Failed to send via Socket.io:', err);
-            alert('메시지 전송에 실패했습니다.');
+            sendPromises.push((async () => {
+                try {
+                    let encryptedMessage = message;
+                    let isEncrypted = false;
+                    
+                    if (encryptionReady.get(peerId)) {
+                        try {
+                            encryptedMessage = await cryptoUtils.encryptMessage(peerId, message);
+                            isEncrypted = true;
+                        } catch (err) {
+                            console.error(`Failed to encrypt for ${peerId}:`, err);
+                        }
+                    }
+                    
+                    channel.send(JSON.stringify({
+                        message: encryptedMessage,
+                        type,
+                        deleteAfter: deleteAfterSeconds,
+                        encrypted: isEncrypted
+                    }));
+                    sentViaP2P = true;
+                } catch (err) {
+                    console.error(`Failed to send to ${peerId}:`, err);
+                }
+            })());
         }
     }
     
-    // 내 화면에 표시
+    await Promise.all(sendPromises);
+    
+    if (!sentViaP2P && socket.connected) {
+        socket.emit('chat-message', { message, type, deleteAfter: deleteAfterSeconds, encrypted: false });
+    } else if (!socket.connected) {
+        alert('서버 연결이 끊어졌습니다. 페이지를 새로고침해주세요.');
+        return;
+    }
+    
     displayMessage(message, true, type, deleteAfterSeconds);
 }
 
-function sendMessage() {
+async function sendMessage() {
     const message = messageInput.value.trim();
     if (!message) return;
     
-    sendMessageData(message, 'text');
+    await sendMessageData(message, 'text');
     messageInput.value = '';
-    
-    // 키보드 유지 (포커스 유지) - 강화
-    // preventDefault로 기본 동작 막기
     messageInput.focus({ preventScroll: true });
-    
-    // iOS에서 확실히 키보드 유지
-    setTimeout(() => {
-        messageInput.focus({ preventScroll: true });
-    }, 0);
+    setTimeout(() => messageInput.focus({ preventScroll: true }), 0);
 }
 
 // 메시지 표시
 function displayMessage(message, isMine, type = 'text', deleteAfter = 0) {
-    // 현재 사용자가 스크롤을 아래쪽에 있는지 확인
-    const isNearBottom = messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight < 100;
+    const shouldScroll = isNearBottom() || isMine;
     
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${isMine ? 'mine' : 'theirs'}`;
@@ -401,29 +362,10 @@ function displayMessage(message, isMine, type = 'text', deleteAfter = 0) {
         img.className = 'message-image';
         img.onclick = () => {
             const overlay = document.createElement('div');
-            overlay.style.cssText = `
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: rgba(0, 0, 0, 0.95);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                z-index: 9999;
-                cursor: pointer;
-            `;
-            
+            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.95);display:flex;align-items:center;justify-content:center;z-index:9999;cursor:pointer';
             const largeImg = document.createElement('img');
             largeImg.src = message;
-            largeImg.style.cssText = `
-                max-width: 95%;
-                max-height: 95%;
-                object-fit: contain;
-                border-radius: 8px;
-            `;
-            
+            largeImg.style.cssText = 'max-width:95%;max-height:95%;object-fit:contain;border-radius:8px';
             overlay.appendChild(largeImg);
             overlay.onclick = () => overlay.remove();
             document.body.appendChild(overlay);
@@ -438,15 +380,10 @@ function displayMessage(message, isMine, type = 'text', deleteAfter = 0) {
     
     const metaDiv = document.createElement('div');
     metaDiv.className = 'message-meta';
-    
     const timeSpan = document.createElement('span');
-    timeSpan.textContent = new Date().toLocaleTimeString('ko-KR', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-    });
+    timeSpan.textContent = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
     metaDiv.appendChild(timeSpan);
     
-    // 자동 삭제 타이머 표시
     let timerSpan = null;
     if (deleteAfter > 0) {
         timerSpan = document.createElement('span');
@@ -457,32 +394,17 @@ function displayMessage(message, isMine, type = 'text', deleteAfter = 0) {
     
     messageContent.appendChild(metaDiv);
     messageDiv.appendChild(messageContent);
-    
     messagesContainer.appendChild(messageDiv);
     
-    // 사용자가 맨 아래에 있거나, 내가 보낸 메시지인 경우에만 자동 스크롤
-    if (isNearBottom || isMine) {
-        // 모바일에서 스크롤이 끝까지 내려가도록 보장 (여러 번 시도)
-        const scrollToBottom = () => {
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        };
-        
-        // 즉시 스크롤
+    if (shouldScroll) {
         scrollToBottom();
-        
-        // 약간의 지연 후 다시 스크롤 (DOM 업데이트 대기)
-        setTimeout(scrollToBottom, 50);
-        setTimeout(scrollToBottom, 150);
-        setTimeout(scrollToBottom, 300);
+        [50, 150, 300].forEach(delay => setTimeout(scrollToBottom, delay));
     }
     
-    // 자동 삭제 타이머 (카운트다운)
     if (deleteAfter > 0) {
         let remainingTime = deleteAfter;
-        
         const countdownInterval = setInterval(() => {
             remainingTime--;
-            
             if (remainingTime > 0 && timerSpan) {
                 timerSpan.textContent = `🔥 ${remainingTime}초`;
             } else {
@@ -494,62 +416,41 @@ function displayMessage(message, isMine, type = 'text', deleteAfter = 0) {
             clearInterval(countdownInterval);
             messageDiv.style.opacity = '0';
             messageDiv.style.transform = 'scale(0.8)';
-            setTimeout(() => {
-                messageDiv.remove();
-            }, 500);
+            setTimeout(() => messageDiv.remove(), 500);
         }, deleteAfter * 1000);
     }
 }
 
-// 시스템 메시지 표시
 function showSystemMessage(message) {
-    // 현재 사용자가 스크롤을 아래쪽에 있는지 확인
-    const isNearBottom = messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight < 100;
-    
     const messageDiv = document.createElement('div');
     messageDiv.className = 'system-message';
     messageDiv.textContent = message;
     messagesContainer.appendChild(messageDiv);
     
-    // 사용자가 맨 아래에 있는 경우에만 자동 스크롤
-    if (isNearBottom) {
-        // 모바일에서 스크롤이 끝까지 내려가도록 보장
-        const scrollToBottom = () => {
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        };
-        
+    if (isNearBottom()) {
         scrollToBottom();
-        setTimeout(scrollToBottom, 50);
-        setTimeout(scrollToBottom, 150);
+        [50, 150].forEach(delay => setTimeout(scrollToBottom, delay));
     }
 }
 
-// 이미지 전송
-imageBtn.addEventListener('click', () => {
-    imageInput.click();
-});
+// 이미지 처리
+imageBtn.addEventListener('click', () => imageInput.click());
 
 imageInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
-    
     if (file && file.type.startsWith('image/')) {
         compressAndSendImage(file);
     }
-    
     imageInput.value = '';
 });
 
-// 이미지 압축 및 전송
 function compressAndSendImage(file) {
     const reader = new FileReader();
-    
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
         const img = new Image();
-        img.onload = () => {
+        img.onload = async () => {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
-            
-            // 최대 크기 설정 (긴 변 기준 1200px)
             const maxSize = 1200;
             let width = img.width;
             let height = img.height;
@@ -565,104 +466,67 @@ function compressAndSendImage(file) {
             canvas.width = width;
             canvas.height = height;
             ctx.drawImage(img, 0, 0, width, height);
-            
-            // JPEG로 압축 (품질 0.7)
             const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
-            
-            console.log('Original size:', event.target.result.length, 'Compressed:', compressedDataUrl.length);
-            sendMessageData(compressedDataUrl, 'image');
+            await sendMessageData(compressedDataUrl, 'image');
         };
-        
-        img.onerror = () => {
-            console.error('Image load failed');
-            alert('이미지를 불러올 수 없습니다.');
-        };
-        
+        img.onerror = () => alert('이미지를 불러올 수 없습니다.');
         img.src = event.target.result;
     };
-    
-    reader.onerror = () => {
-        console.error('File read failed');
-        alert('파일을 읽을 수 없습니다.');
-    };
-    
+    reader.onerror = () => alert('파일을 읽을 수 없습니다.');
     reader.readAsDataURL(file);
 }
 
-// 메시지 전송 이벤트
+// 이벤트 리스너
 sendBtn.addEventListener('click', (e) => {
-    e.preventDefault(); // 기본 동작 방지
+    e.preventDefault();
     sendMessage();
 });
 
 messageInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
-        e.preventDefault(); // 기본 동작 방지
+        e.preventDefault();
         sendMessage();
     }
 });
 
-// 입력창 포커스 시 스크롤 (키보드가 올라올 때)
 messageInput.addEventListener('focus', () => {
-    // 모바일에서 키보드가 올라오도록 보장
-    setTimeout(() => {
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    }, 300); // 키보드 애니메이션 대기
+    setTimeout(scrollToBottom, 300);
 }, { passive: true });
 
-// 키보드 표시/숨김 시 스크롤 조정
 let resizeTimer;
 window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    }, 100);
+    resizeTimer = setTimeout(scrollToBottom, 100);
 });
 
-// 초기 로드 시 스크롤을 맨 아래로
 window.addEventListener('load', () => {
-    setTimeout(() => {
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    }, 100);
+    setTimeout(scrollToBottom, 100);
 });
 
-// 현재 접속 URL 사용 (QR 코드에 현재 링크 사용)
+// QR 코드
 let serverURL = window.location.origin;
 fetch('/api/server-info')
     .then(res => res.json())
     .then(data => {
-        // 서버에서 반환한 URL이 현재 접속 URL과 다르면 현재 URL 우선 사용
         const currentOrigin = window.location.origin;
-        
-        // 현재 접속 URL 사용 (공개 도메인/IP인 경우)
         if (currentOrigin !== 'http://localhost:3000' && !currentOrigin.includes('127.0.0.1') && !currentOrigin.includes('192.168.')) {
             serverURL = currentOrigin;
         } else {
-            // 로컬 접속인 경우 서버에서 반환한 URL 사용
             serverURL = data.url;
         }
     })
-    .catch(() => {
-        console.log('Using current origin:', serverURL);
-    });
+    .catch(() => {});
 
-// QR 코드 표시 (헤더 버튼)
-showQRBtn.addEventListener('click', () => {
-    showQRCode();
-});
+showQRBtn.addEventListener('click', showQRCode);
 
-// QR 코드 표시 (중앙 버튼)
 const generateQRBtn = document.getElementById('generateQRBtn');
 if (generateQRBtn) {
-    generateQRBtn.addEventListener('click', () => {
-        showQRCode();
-    });
+    generateQRBtn.addEventListener('click', showQRCode);
 }
 
 function showQRCode() {
     const roomURL = `${serverURL}/room.html?room=${roomId}`;
     document.getElementById('roomURL').textContent = roomURL;
-    
     const qrcodeContainer = document.getElementById('qrcode');
     qrcodeContainer.innerHTML = '';
     new QRCode(qrcodeContainer, {
@@ -672,11 +536,9 @@ function showQRCode() {
         colorDark: "#8b5cf6",
         colorLight: "#ffffff"
     });
-    
     qrModal.style.display = 'flex';
 }
 
-// QR 코드 모달 닫기
 document.querySelector('.close-modal').addEventListener('click', () => {
     qrModal.style.display = 'none';
 });
@@ -687,15 +549,12 @@ qrModal.addEventListener('click', (e) => {
     }
 });
 
-// URL 복사
 document.getElementById('copyURLBtn').addEventListener('click', () => {
-    const roomURL = document.getElementById('roomURL').textContent;
-    navigator.clipboard.writeText(roomURL).then(() => {
+    navigator.clipboard.writeText(document.getElementById('roomURL').textContent).then(() => {
         alert('URL이 복사되었습니다!');
     });
 });
 
-// 방 나가기
 leaveRoomBtn.addEventListener('click', () => {
     if (confirm('방을 나가시겠습니까? 모든 대화 내용이 삭제됩니다.')) {
         socket.emit('leave-room');
@@ -703,17 +562,13 @@ leaveRoomBtn.addEventListener('click', () => {
     }
 });
 
-// 세션 종료 오버레이
 function showSessionExpired() {
     sessionExpired.style.display = 'flex';
-    
     let countdown = 3;
     const countdownElement = document.querySelector('.countdown');
-    
     const interval = setInterval(() => {
         countdown--;
         countdownElement.textContent = `${countdown}초 후 대화창이 닫힙니다...`;
-        
         if (countdown <= 0) {
             clearInterval(interval);
             window.location.href = '/';
@@ -727,8 +582,11 @@ document.getElementById('closeNowBtn').addEventListener('click', () => {
 
 function cleanup() {
     socket.emit('leave-room');
-    peers.forEach((pc) => pc.close());
-    dataChannels.forEach((dc) => dc.close());
+    peers.forEach(pc => pc.close());
+    dataChannels.forEach(dc => dc.close());
+    cryptoUtils.clearAllKeys();
+    encryptionReady.clear();
 }
 
 window.addEventListener('beforeunload', cleanup);
+init();

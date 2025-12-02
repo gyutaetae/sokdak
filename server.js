@@ -64,6 +64,10 @@ function setupSocketHandlers() {
       socketHandlers.handleICECandidate(socket, data);
     });
     
+    socket.on('public-key', (data) => {
+      socketHandlers.handlePublicKey(socket, data);
+    });
+    
     socket.on('chat-message', (data) => {
       socketHandlers.handleChatMessage(socket, data, rooms);
     });

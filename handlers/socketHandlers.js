@@ -97,6 +97,29 @@ function handleICECandidate(socket, data) {
   });
 }
 
+function handlePublicKey(socket, data) {
+  // 공개 키를 다른 사용자에게 전달 (키 교환)
+  if (data.to) {
+    // 특정 사용자에게 전달
+    socket.to(data.to).emit('public-key', {
+      publicKey: data.publicKey,
+      from: socket.id,
+      userId: socket.id
+    });
+    console.log(`Public key forwarded from ${socket.id} to ${data.to}`);
+  } else {
+    // 방의 모든 사용자에게 브로드캐스트
+    if (socket.roomId) {
+      socket.to(socket.roomId).emit('public-key', {
+        publicKey: data.publicKey,
+        from: socket.id,
+        userId: socket.id
+      });
+      console.log(`Public key broadcasted from ${socket.id} to room ${socket.roomId}`);
+    }
+  }
+}
+
 function handleChatMessage(socket, data, rooms) {
   if (!socket.roomId) {
     return;
@@ -163,6 +186,7 @@ module.exports = {
   handleWebRTCOffer,
   handleWebRTCAnswer,
   handleICECandidate,
+  handlePublicKey,
   handleChatMessage,
   handleUserDisconnect,
   handleLeaveRoom

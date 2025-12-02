@@ -26,7 +26,7 @@
     "url": "https://github.com/Gyu-kor/secure-chat.git"
   },
   "dependencies": {
-    "express": "^4.18.2",
+    "express": "^4.22.1",
     "socket.io": "^4.6.1"
   },
   "devDependencies": {
@@ -36,6 +36,3 @@
     "node": ">=14.0.0"
   }
 }
-
-
-
